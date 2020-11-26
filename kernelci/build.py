@@ -678,6 +678,33 @@ scripts/kconfig/merge_config.sh -O {output} '{base}' '{frag}' {redir}
         return res
 
 
+class MakeKernel(Step):
+
+    def run(self, jopt=None, verbose=False):
+        if self._kernel_config_enabled('XIP_KERNEL'):
+            target = 'xipImage'
+        elif self._kernel_config_enabled('SYS_SUPPORTS_ZBOOT'):
+            target = 'vmlinuz'
+        else:
+            env = self._bmeta['environment']
+            target = MAKE_TARGETS.get(env['arch'])
+
+        kbmeta = self._bmeta.setdefault('kernel', dict())
+        kbmeta['image'] = target
+
+        res = self._run_make(target, jopt, verbose)
+
+        if res:
+            vmlinux_file = os.path.join(self._output_path, 'vmlinux')
+            if os.path.isfile(vmlinux_file):
+                vmlinux_meta = kernelci.elf.read(vmlinux_file)
+                kbmeta.update(vmlinux_meta)
+                kbmeta['vmlinux_file_size'] = os.stat(vmlinux_file).st_size
+
+        self._save_bmeta()
+        return res
+
+
 def _make_defconfig(defconfig, kwargs, extras, verbose, log_file):
     kdir, output_path = (kwargs.get(k) for k in ('kdir', 'output'))
     result = True
