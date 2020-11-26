@@ -705,6 +705,32 @@ class MakeKernel(Step):
         return res
 
 
+class MakeModules(Step):
+
+    def modules_enabled(self):
+        return self._kernel_config_enabled('MODULES')
+
+    def run(self, mod_path=None, jopt=None, verbose=False):
+        res = self._run_make('modules', jopt, verbose)
+
+        if res:
+            if not mod_path:
+                mod_path = os.path.join(self._output_path, '_modules_')
+            if os.path.exists(mod_path):
+                shutil.rmtree(mod_path)
+            os.makedirs(mod_path)
+            cross_compile = self._bmeta['environment']['cross_compile']
+            opts = {
+                'INSTALL_MOD_PATH': os.path.abspath(mod_path),
+                'INSTALL_MOD_STRIP': '1',
+                'STRIP': "{}strip".format(cross_compile),
+            }
+            res = self._run_make('modules_install', jopt, verbose, opts)
+
+        self._save_bmeta()
+        return res
+
+
 def _make_defconfig(defconfig, kwargs, extras, verbose, log_file):
     kdir, output_path = (kwargs.get(k) for k in ('kdir', 'output'))
     result = True
