@@ -492,6 +492,58 @@ def _run_make(kdir, arch, target=None, jopt=None, silent=True, cc='gcc',
     return shell_cmd(cmd, True)
 
 
+class Step:
+
+    def __init__(self, kdir, output_path=None, log=None, reset=False):
+        self._kdir = kdir
+        self._output_path = output_path or os.path.join(kdir, 'build')
+        self._bmeta_path = os.path.join(self._output_path, 'bmeta.json')
+        self._log_path = log
+        self._bmeta = dict()
+        self._dot_config = None
+        if not os.path.exists(self._output_path):
+            os.mkdir(self._output_path)
+        elif os.path.exists(self._bmeta_path):
+            if reset:
+                os.unlink(self._bmeta_path)
+            else:
+                with open(self._bmeta_path) as json_file:
+                    self._bmeta = json.load(json_file)
+
+    @property
+    def bmeta_path(self):
+        return self._bmeta_path
+
+    def _save_bmeta(self):
+        if self._log_path and os.path.exists(self._log_path):
+            logs = self._bmeta.setdefault('logs', list())
+            log_file = os.path.basename(self._log_path)
+            if log_file not in logs:
+                logs.append(log_file)
+        with open(self._bmeta_path, 'w') as json_file:
+            json.dump(self._bmeta, json_file, indent=4, sort_keys=True)
+
+    def _kernel_config_enabled(self, config_name):
+        dot_config = os.path.join(self._output_path, '.config')
+        cmd = 'grep -cq CONFIG_{}=y {}'.format(config_name, dot_config)
+        return shell_cmd(cmd, True)
+
+    def _run_make(self, target, jopt=None, verbose=False, opts=None):
+        env = self._bmeta['environment']
+        make_opts = env['make_opts'].copy()
+        if opts:
+            make_opts.update(opts)
+        if jopt is None:
+            jopt = int(shell_cmd("nproc")) + 2
+        return _run_make(
+            self._kdir, env['arch'], target, jopt, not verbose,
+            env['compiler'], env['cross_compile'], env['use_ccache'],
+            self._output_path, self._log_path, make_opts)
+
+    def run(self):
+        raise NotImplementedError("Step.run() needs to be implemented.")
+
+
 def _make_defconfig(defconfig, kwargs, extras, verbose, log_file):
     kdir, output_path = (kwargs.get(k) for k in ('kdir', 'output'))
     result = True
