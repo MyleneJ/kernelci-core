@@ -731,6 +731,15 @@ class MakeModules(Step):
         return res
 
 
+class MakeDeviceTrees(Step):
+
+    def dt_enabled(self):
+        return self._kernel_config_enabled('OF_FLATTREE')
+
+    def run(self, jopt=None, verbose=False):
+        return self._run_make('dtbs', jopt, verbose)
+
+
 def _make_defconfig(defconfig, kwargs, extras, verbose, log_file):
     kdir, output_path = (kwargs.get(k) for k in ('kdir', 'output'))
     result = True
