@@ -501,6 +501,7 @@ class Step:
         self._log_path = log
         self._bmeta = dict()
         self._dot_config = None
+        self._start_time = time.time()
         if not os.path.exists(self._output_path):
             os.mkdir(self._output_path)
         elif os.path.exists(self._bmeta_path):
@@ -514,12 +515,21 @@ class Step:
     def bmeta_path(self):
         return self._bmeta_path
 
-    def _save_bmeta(self):
+    def _add_run_bmeta(self, name, jopt=None, status=None):
+        run_data = {
+            'name': name,
+            'start_time': self._start_time,
+            'duration': time.time() - self._start_time,
+        }
+        if jopt is not None:
+            run_data['threads'] = str(jopt)
+        if status is not None:
+            run_data['status'] = "PASS" if status is True else "FAIL"
         if self._log_path and os.path.exists(self._log_path):
-            logs = self._bmeta.setdefault('logs', list())
-            log_file = os.path.basename(self._log_path)
-            if log_file not in logs:
-                logs.append(log_file)
+            run_data['log_file'] = os.path.basename(self._log_path)
+        self._bmeta.setdefault('steps', list()).append(run_data)
+
+    def _save_bmeta(self):
         with open(self._bmeta_path, 'w') as json_file:
             json.dump(self._bmeta, json_file, indent=4, sort_keys=True)
 
@@ -555,6 +565,7 @@ class RevisionData(Step):
             'describe_v': git_describe_verbose(self._kdir),
             'commit': head_commit(self._kdir),
         }
+        self._add_run_bmeta('revision', status=True)
         self._save_bmeta()
         return True
 
@@ -595,6 +606,7 @@ class EnvironmentData(Step):
             'use_ccache': shell_cmd("which ccache > /dev/null", True),
             'make_opts': make_opts,
         }
+        self._add_run_bmeta('environment', status=True)
         self._save_bmeta()
         return True
 
@@ -686,6 +698,7 @@ scripts/kconfig/merge_config.sh -O {output} '{base}' '{frag}' {redir}
             self._bmeta['kernel']['fragments'] = [kci_frag_name]
             res = self._merge_config(kci_frag_name, verbose)
 
+        self._add_run_bmeta('config', jopt, res)
         self._save_bmeta()
         return res
 
@@ -713,6 +726,7 @@ class MakeKernel(Step):
                 kbmeta.update(vmlinux_meta)
                 kbmeta['vmlinux_file_size'] = os.stat(vmlinux_file).st_size
 
+        self._add_run_bmeta('kernel', jopt, res)
         self._save_bmeta()
         return res
 
@@ -739,6 +753,7 @@ class MakeModules(Step):
             }
             res = self._run_make('modules_install', jopt, verbose, opts)
 
+        self._add_run_bmeta('modules', jopt, res)
         self._save_bmeta()
         return res
 
@@ -749,7 +764,10 @@ class MakeDeviceTrees(Step):
         return self._kernel_config_enabled('OF_FLATTREE')
 
     def run(self, jopt=None, verbose=False):
-        return self._run_make('dtbs', jopt, verbose)
+        res = self._run_make('dtbs', jopt, verbose)
+        self._add_run_bmeta('dtbs', jopt, res)
+        self._save_bmeta()
+        return res
 
 
 def _make_defconfig(defconfig, kwargs, extras, verbose, log_file):
